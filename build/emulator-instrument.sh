@@ -4,11 +4,13 @@
 #
 #   build/emulator-instrument.sh <test-apk> [<server-base>]
 #
-# <server-base> is where the emulator reaches the runner's test server (default http://10.0.2.2:8000).
+# <server-base> is where the device reaches the runner's test server. The default, http://127.0.0.1:8000, goes over
+# adb reverse: the CI emulators' own network has been dead ("Machine is not on the network", no route to 10.0.2.2, no
+# DNS), and loopback needs none.
 set -uo pipefail
 
 apk="$1"
-base="${2:-http://10.0.2.2:8000}"
+base="${2:-http://127.0.0.1:8000}"
 runner="io.github.bi0shacker001.aria2engine.test/androidx.test.runner.AndroidJUnitRunner"
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -19,7 +21,11 @@ for attempt in 1 2 3 4 5; do
   adb kill-server >/dev/null 2>&1 || true
   sleep 5
 done
-"$here/wait-network.sh" || exit 1
+# The tests that need the internet skip themselves when the device has none; say which it is.
+adb shell ping -c1 -W3 github.com 2>&1 | head -2 || true
+case "$base" in
+  http://127.0.0.1:*) port="${base##*:}"; adb reverse "tcp:$port" "tcp:$port" || { sleep 3; adb reverse "tcp:$port" "tcp:$port"; } || exit 1 ;;
+esac
 
 adb install -r -t "$apk" || { sleep 5; adb install -r -t "$apk"; } || exit 1
 status=1
