@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-build:
+    # libaria2 and its dependencies for each ABI droidtop and Enginehost ship, plus the smoke test.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build libaria2
+        run: build/build.sh ${{ matrix.abi }} out/${{ matrix.abi }}
+      - name: Build the smoke test
+        run: build/smoke.sh ${{ matrix.abi }} out/${{ matrix.abi }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aria2-${{ matrix.abi }}
+          path: |
+            out/${{ matrix.abi }}/prefix/include
+            out/${{ matrix.abi }}/prefix/lib/*.a
+            out/${{ matrix.abi }}/prefix/lib/pkgconfig
+            out/${{ matrix.abi }}/prefix/bin/aria2c
+            out/${{ matrix.abi }}/engine_smoke
+            out/${{ matrix.abi }}/aria2-configure.log
+          if-no-files-found: error
+
+  android-emulator:
+    # The smoke test on a real Android: HTTP from the runner (10.0.2.2 from the emulator) and HTTPS with the
+    # platform's own certificates.
+    needs: [android-build]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: aria2-x86_64
+          path: artifact
+      - name: Serve a test file
+        run: |
+          mkdir -p served
+          head -c 5242880 /dev/urandom > served/blob.bin
+          (cd served && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
+          sleep 1
+          curl -sSf -o /dev/null http://127.0.0.1:8000/blob.bin
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: default
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: build/emulator-smoke.sh artifact

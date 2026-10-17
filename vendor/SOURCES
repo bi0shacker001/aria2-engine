@@ -1,0 +1,5 @@
+# Upstream sources, pinned by SHA-256. aria2 is vendored here as its release tarball, unedited
+# (its own configure is used as shipped); the others are fetched by build/deps.sh and checked.
+aria2   1.37.0  60a420ad7085eb616cb6e2bdf0a7206d68ff3d37fb5a956dc44242eb2f79b66b  vendor/aria2-1.37.0.tar.xz
+openssl 3.5.4   967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99  https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz
+expat   2.7.3   71df8f40706a7bb0a80a5367079ea75d91da4f8c65c58ec59bcdfbf7decdab9f  https://github.com/libexpat/libexpat/releases/download/R_2_7_3/expat-2.7.3.tar.xz
