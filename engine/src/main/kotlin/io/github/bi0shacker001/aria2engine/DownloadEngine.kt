@@ -80,7 +80,7 @@ class DownloadEngine(
         }
         val bound = if (isolated) {
             // A new instance each start: a stopped engine's process ends, and must not be the one bound again.
-            app.bindIsolatedService(Intent(app, EngineService::class.java), Context.BIND_AUTO_CREATE, "aria2-${System.nanoTime()}", app.mainExecutor, conn)
+            app.bindIsolatedService(Intent(app, EngineService::class.java), Context.BIND_AUTO_CREATE, "aria2_${System.nanoTime()}", app.mainExecutor, conn)
         } else {
             app.bindService(Intent(app, EngineOpenService::class.java), conn, Context.BIND_AUTO_CREATE)
         }
