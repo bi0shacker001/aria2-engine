@@ -4,3 +4,4 @@ out/
 /local.properties
 /.cxx/
 /engine/.cxx/
+/build/reports/
