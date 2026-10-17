@@ -52,6 +52,15 @@ open class EngineService : Service() {
         require(EngineConfig.insideRoot(path) && path != EngineConfig.VIRTUAL_ROOT) { "not a path of the engine's folder" }
     }
 
+    /** Answers [report], then ends this process once the answer has gone back. */
+    private fun endAfter(report: String): String {
+        Thread {
+            Thread.sleep(500)
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }.start()
+        return report
+    }
+
     private val binder = object : IEngine.Stub() {
         override fun start(broker: ParcelFileDescriptor, keys: Array<String>, values: Array<String>, events: IEngineEvents): String {
             requireHost()
@@ -61,10 +70,12 @@ open class EngineService : Service() {
                 // not work there and the host binds EngineOpenService instead (docs/design.md, "Processes").
                 if (isolated && Build.VERSION.SDK_INT < 30) return "error: the isolated engine needs Android 11 or later"
                 val report = EngineNative.lockdown(broker.detachFd(), arrayOf(EngineConfig.CLAIM), isolated)
-                if (report != "on") return report
+                // The lockdown holds for the life of the process, so a start that fails after it ends the process:
+                // the host's next start binds a fresh one, never this one again.
+                if (report != "on") return endAfter(report)
                 val options = EngineConfig.sessionOptions(keys.zip(values).toMap())
                 val session = EngineNative.sessionNew(options.keys.toTypedArray(), options.values.toTypedArray())
-                if (session == 0L) return "error: libaria2 refused the session"
+                if (session == 0L) return endAfter("error: libaria2 refused the session (its log: ${EngineConfig.LOG})")
                 this@EngineService.events = events
                 EngineNative.listener = { event, gid -> runCatching { this@EngineService.events?.onEvent(event, gid) } }
                 owner = Binder.getCallingPid()

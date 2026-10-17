@@ -71,7 +71,7 @@ jobs:
           target: default
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-          script: build/emulator-smoke.sh artifact
+          script: build/wait-network.sh && build/emulator-smoke.sh artifact
 
   library:
     # The Android library both hosts bundle: the engine service, the JNI layer and the Kotlin API, with its unit tests.
@@ -150,7 +150,7 @@ jobs:
           target: default
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-          script: ./gradlew --no-daemon :engine:connectedDebugAndroidTest -Paria2Prefix=out -Pandroid.injected.build.abi=x86_64 || (adb logcat -d | grep -iE 'aria2|sandbox|F DEBUG|AndroidRuntime' | tail -120; exit 1)
+          script: build/wait-network.sh && ./gradlew --no-daemon :engine:connectedDebugAndroidTest -Paria2Prefix=out -Pandroid.injected.build.abi=x86_64 || (adb logcat -d | grep -iE 'aria2|sandbox|F DEBUG|AndroidRuntime|TestRunner|Exception' | tail -200; exit 1)
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

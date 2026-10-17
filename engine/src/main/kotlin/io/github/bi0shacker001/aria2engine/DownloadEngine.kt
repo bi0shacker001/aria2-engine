@@ -86,7 +86,16 @@ class DownloadEngine(
         }
         check(bound) { "the engine service could not be bound" }
         connection = conn
-        val remote = withTimeout(30_000) { connected.await() }
+        try {
+            startSession(withTimeout(30_000) { connected.await() }, options)
+        } catch (e: Throwable) {
+            stop()
+            throw e
+        }
+        return this
+    }
+
+    private fun startSession(remote: IEngine, options: Map<String, String>) {
         val global = LinkedHashMap(options)
         if (rpc) {
             global["enable-rpc"] = "true"
@@ -107,9 +116,15 @@ class DownloadEngine(
         } finally {
             broker.close()
         }
-        check(report == "on") { "the engine did not start: $report" }
+        check(report == "on") { "the engine did not start: $report${logTail()}" }
         engine = remote
-        return this
+    }
+
+    /** The end of libaria2's log, for a start that failed. */
+    private fun logTail(): String {
+        val log = File(realPath(EngineConfig.LOG))
+        val lines = runCatching { log.readLines().takeLast(20) }.getOrNull().orEmpty()
+        return if (lines.isEmpty()) "" else "\n" + lines.joinToString("\n")
     }
 
     private fun remote(): IEngine = engine ?: throw IllegalStateException("the engine is not running")

@@ -24,6 +24,9 @@ object EngineConfig {
      */
     const val CA_BUNDLE = "$STATE/ca-bundle.pem"
 
+    /** libaria2's log, at [DEFAULTS]'s level unless the host asks for another: what a refused session reports. */
+    const val LOG = "$STATE/engine.log"
+
     /** Options no caller may set: they run programs or name files outside [VIRTUAL_ROOT]. */
     private val REFUSED = setOf(
         "on-download-start", "on-download-pause", "on-download-stop", "on-download-complete", "on-download-error",
@@ -58,6 +61,7 @@ object EngineConfig {
         "follow-torrent" to "true",
         "follow-metalink" to "true",
         "enable-rpc" to "false",
+        "log-level" to "warn",
     )
 
     /** Set last, whatever was asked. */
@@ -69,6 +73,7 @@ object EngineConfig {
         "dht-file-path" to "$STATE/dht.dat",
         "dht-file-path6" to "$STATE/dht6.dat",
         "quiet" to "true",
+        "log" to LOG,
     )
 
     /** The session's global options: [DEFAULTS], then the host's (less [REFUSED]), then [FORCED]. */

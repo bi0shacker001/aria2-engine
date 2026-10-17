@@ -22,6 +22,7 @@ class EngineConfigTest {
         assertEquals("false", session["rpc-listen-all"])
         assertFalse(session.keys.any { it.startsWith("on-") })
         assertFalse("save-session" in session)
+        assertEquals("the log stays in the engine's own folder", EngineConfig.LOG, session["log"])
     }
 
     @Test

@@ -34,13 +34,14 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     @Before
     fun startEngine() = runBlocking {
         root.deleteRecursively()
-        engine = DownloadEngine(context, root, androidIsolation = androidIsolation).start()
+        // Info-level log: a session that fails says why in the failure's message (DownloadEngine.start).
+        engine = DownloadEngine(context, root, androidIsolation = androidIsolation).start(mapOf("log-level" to "info"))
         assertEquals(androidIsolation, engine.isolated)
     }
 
     @After
     fun stopEngine() {
-        engine.stop()
+        if (::engine.isInitialized) engine.stop()
         root.deleteRecursively()
     }
 

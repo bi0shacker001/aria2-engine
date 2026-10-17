@@ -71,9 +71,13 @@ engine forces that bundle as `ca-certificate`: no caller can name another.
 - **Refused:** every option that runs a program (`on-download-complete` and the other hooks) or names a file
   outside the engine's folder (a session, cookie jar, log, netrc or certificate file, `input-file`,
   `conf-path`). Nothing the engine downloads is ever run.
-- **Forced:** certificate checks on; RPC listening on loopback only; DHT state files under the engine's folder.
+- **Forced:** certificate checks on; RPC listening on loopback only; DHT state files under the engine's folder;
+  libaria2's log at `.state/engine.log` in the engine's folder (`warn` unless the host asks for another level),
+  whose end a failed start reports.
 - **A download's `dir`** must be under the engine's folder, `/aria2/downloads`; any other is replaced by it.
 - **RPC** is off unless the host gives it a secret, and a run-time change cannot turn it on or move it.
+- **A start that fails** after the lockdown ends the engine's process, since the lockdown holds for its life:
+  the host's next start binds a fresh one.
 - **Defaults:** torrents don't seed (`seed-time=0`) unless the host asks, and files are not preallocated.
 
 ## Identity
