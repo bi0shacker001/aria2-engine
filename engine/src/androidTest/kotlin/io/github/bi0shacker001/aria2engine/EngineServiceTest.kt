@@ -1,5 +1,6 @@
 package io.github.bi0shacker001.aria2engine
 
+import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -28,6 +29,8 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     }
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    // CI's emulator reaches the runner at 10.0.2.2; a local device passes -e serverBase http://127.0.0.1:8000 (adb reverse).
+    private val serverBase = InstrumentationRegistry.getArguments().getString("serverBase") ?: "http://10.0.2.2:8000"
     private val root = File(context.filesDir, "engine-test")
     private lateinit var engine: DownloadEngine
 
@@ -41,6 +44,8 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
 
     @After
     fun stopEngine() {
+        // libaria2's log, so a failed run says why (EngineConfig.LOG, at info level from startEngine).
+        File(root, ".state/engine.log").takeIf { it.isFile }?.readLines()?.takeLast(60)?.forEach { Log.i("aria2engine.test", it) }
         if (::engine.isInitialized) engine.stop()
         root.deleteRecursively()
     }
@@ -50,12 +55,12 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         withTimeout(timeoutMs) {
             engine.events.first { (event, id) -> id == gid && (event == EngineEvent.COMPLETE || event == EngineEvent.ERROR) }
         }
-        engine.status(gid) ?: error("the engine forgot $gid")
+        (engine.status(gid) ?: error("the engine forgot $gid")).also { Log.i("aria2engine.test", "status $it") }
     }
 
     @Test
     fun anHttpDownloadLandsInTheHostsFolder() {
-        val status = completes(DownloadRequest(DownloadKind.URI, uris = listOf("http://10.0.2.2:8000/blob.bin"), options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job1")))
+        val status = completes(DownloadRequest(DownloadKind.URI, uris = listOf("$serverBase/blob.bin"), options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job1")))
         assertEquals("complete", status.state)
         val file = File(status.files.single().path)
         assertEquals(File(root, "job1/blob.bin").path, file.path)
@@ -75,7 +80,7 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         val status = completes(
             DownloadRequest(
                 DownloadKind.URI,
-                uris = listOf("http://10.0.2.2:8000/blob.bin"),
+                uris = listOf("$serverBase/blob.bin"),
                 options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job3", "on-download-complete" to "/system/bin/touch"),
             ),
         )
@@ -86,7 +91,7 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     @Test
     fun aFolderOutsideTheEnginesIsNotReachable() {
         // Asked to write outside its folder, the download lands in the engine's own folder instead.
-        val status = completes(DownloadRequest(DownloadKind.URI, uris = listOf("http://10.0.2.2:8000/blob.bin"), options = mapOf("dir" to context.filesDir.path)))
+        val status = completes(DownloadRequest(DownloadKind.URI, uris = listOf("$serverBase/blob.bin"), options = mapOf("dir" to context.filesDir.path)))
         assertTrue(status.files.single().path.startsWith(root.path))
     }
 }
