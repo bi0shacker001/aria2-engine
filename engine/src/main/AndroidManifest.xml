@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+          The download engine (docs/design.md): libaria2 in an isolated process of its own, a UID with no
+          permission and no file of the host's, confined by the sandbox library to the host's broker. Not
+          exported: only the host app's main process binds it, and it checks every call.
+        -->
+        <service
+            android:name="io.github.bi0shacker001.aria2engine.EngineService"
+            android:process=":aria2"
+            android:exported="false"
+            android:isolatedProcess="true" />
+    </application>
+</manifest>

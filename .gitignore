@@ -1,1 +1,6 @@
 out/
+/engine/build/
+/.gradle/
+/local.properties
+/.cxx/
+/engine/.cxx/

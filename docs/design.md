@@ -12,13 +12,19 @@ docs/SPEC.md 12a "One download engine" and docs/plugin-api.md 5.7).
 
 1. **libaria2**, from aria2's release tarball as shipped (`vendor/`, never edited), cross-compiled with the NDK
    for arm64-v8a and x86_64 against OpenSSL, expat and the NDK's zlib (`build/build.sh`).
-2. **The engine service**: an Android isolated service that runs one libaria2 session under the sandbox
-   library's lockdown (bi0shacker001/sandbox). It drives the session from a thread of its own and reports
-   events. (Next.)
-3. **The JNI layer and a Kotlin API** for the host app's main process: add (HTTP, FTP, torrent, magnet,
-   metalink), pause, resume, remove, global and per-download limits, and progress and completion events, over a
-   typed binder interface with caller checks. aria2's JSON-RPC is enabled for the host only (loopback, a secret
-   per run). (Next.)
+2. **The engine service** (`EngineService`, `:aria2`, `android:isolatedProcess`): it confines itself to the
+   host's broker with the sandbox library's lockdown (bi0shacker001/sandbox, `vendor/sandbox`), then runs one
+   libaria2 session on one thread (`EngineThread`; libaria2 is not thread-safe), which alternates a turn of the
+   session's loop with the commands queued from binder threads. It needs Android 11 (API 30) or later: below
+   that an isolated process cannot use a socket it was handed. A stopped engine ends its process, because the
+   lockdown and libaria2 start once per process.
+3. **The JNI layer** (`native/engine`, `libaria2engine.so`, in the engine process only) and **the broker**
+   (`native/broker`, `libaria2broker.so`, in the host's process; it never loads libaria2).
+4. **The Kotlin API** (`DownloadEngine`) for the host's main process: start, add (HTTP, HTTPS, FTP, torrent,
+   magnet, Metalink), pause, resume, remove, global and per-download limits, status, and download events, over a
+   typed binder interface (`IEngine`) whose every method checks that the caller is the host's own UID and the
+   process that started the session. aria2's JSON-RPC is on for the host as well: loopback only, through the
+   broker, with a secret made for each run.
 
 ## Network
 
@@ -34,6 +40,38 @@ host's broker opens it under that download's rules: a download writes only its d
 `.aria2` control file beside it, inside the folder it was given. TLS certificates are the platform's own store,
 read-only (`SSL_CERT_DIR=/system/etc/security/cacerts`, already in OpenSSL's hashed-directory form).
 
+## Options
+
+`EngineConfig` decides what libaria2 may do, whatever the caller asks, the host included:
+
+- **Refused:** every option that runs a program (`on-download-complete` and the other hooks) or names a file
+  outside the engine's folder (a session, cookie jar, log, netrc or certificate file, `input-file`,
+  `conf-path`). Nothing the engine downloads is ever run.
+- **Forced:** certificate checks on; RPC listening on loopback only; DHT state files under the engine's folder.
+- **A download's `dir`** must be under the engine's folder, `/aria2/downloads`; any other is replaced by it.
+- **RPC** is off unless the host gives it a secret, and a run-time change cannot turn it on or move it.
+- **Defaults:** torrents don't seed (`seed-time=0`) unless the host asks, and files are not preallocated.
+
+## Identity
+
+The owner: "What if we just report a semi-sanitized android webview version?" and "The exception is for torrents
+(don't wanna be suspected of tracker rule evasion)". So:
+- **HTTP(S) and FTP:** these downloads report the device's WebView user agent in Chrome's reduced form:
+  - no `; wv`;
+  - `Linux; Android 10; K` as the platform;
+  - only Chrome's major version, for example `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like
+    Gecko) Chrome/141.0.0.0 Mobile Safari/537.36`.
+  It is recomputed when WebView updates (`UserAgent`, `DownloadEngine.userAgent`).
+- **A request's own agent:** a request that carries its own `user-agent` (a site session's) keeps it.
+- **BitTorrent:** a torrent, a magnet or a Metalink is never given one. aria2's `user-agent` would also go to HTTP
+  trackers, so trackers and peers see aria2's own identity (`peer-agent`, `peer-id-prefix` and its tracker
+  agent).
+
+## Releases
+
+A tag `v<version>` publishes `aria2-engine-<version>.aar` with its SHA-256 as a GitHub release. droidtop and
+Enginehost bundle that AAR, pinned by digest.
+
 ## Not built in
 
 - c-ares (see Network).
@@ -42,6 +80,13 @@ read-only (`SSL_CERT_DIR=/system/etc/security/cacerts`, already in OpenSSL's has
 
 ## Testing
 
-`build/smoke.sh` links `native/smoke/engine_smoke.cc`, which drives libaria2 directly (session, add, run, events).
+- **On the JVM:** `EngineConfigTest`, `UserAgentTest` and `DownloadStatusTest`.
+- **On the emulator** (API 30 and 34), `EngineServiceTest` exercises the whole path: the isolated process, the
+  lockdown, the broker's files and sockets, and libaria2. It checks:
+  - HTTP from the runner into the host's folder;
+  - HTTPS with the platform's certificates;
+  - that a hook option is refused;
+  - that a folder outside the engine's is not reachable.
+- **The smoke test:** `build/smoke.sh` links `native/smoke/engine_smoke.cc`, which drives libaria2 directly (session, add, run, events).
 CI runs it on the emulator (API 30 and 34) over HTTP from the runner and over HTTPS with the platform's
 certificates.
