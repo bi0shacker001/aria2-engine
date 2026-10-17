@@ -62,7 +62,9 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     }
 
     private fun completes(request: DownloadRequest, timeoutMs: Long = 120_000): DownloadStatus = runBlocking {
-        val gid = engine.add(request)
+        // One connection per download: the runner's python server cannot serve ranges, so a connection that adb reverse
+        // drops (seen on API 28) could not be resumed by a second one.
+        val gid = engine.add(request.copy(options = mapOf("split" to "1", "max-connection-per-server" to "1") + request.options))
         withTimeout(timeoutMs) {
             engine.events.first { (event, id) -> id == gid && (event == EngineEvent.COMPLETE || event == EngineEvent.ERROR) }
         }
