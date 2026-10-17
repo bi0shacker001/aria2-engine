@@ -3,4 +3,6 @@
          the host app, so the host holds the network permissions, as any real host does. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The tests read the runner's checksum file from its plain-HTTP test server (build/range-server.py). -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

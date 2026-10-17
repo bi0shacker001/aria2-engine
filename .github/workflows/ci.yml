@@ -56,9 +56,11 @@ jobs:
         run: |
           mkdir -p served
           head -c 5242880 /dev/urandom > served/blob.bin
-          (cd served && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
+          # Ranges, so a download that loses its connection resumes; /cut/ drops one on purpose (build/range-server.py).
+          nohup python3 build/range-server.py served 8000 > range-server.log 2>&1 &
           sleep 1
           curl -sSf -o /dev/null http://127.0.0.1:8000/blob.bin
+          curl -sSf -o /dev/null -H 'Range: bytes=0-0' http://127.0.0.1:8000/blob.bin
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -135,9 +137,11 @@ jobs:
         run: |
           mkdir -p served
           head -c 5242880 /dev/urandom > served/blob.bin
-          (cd served && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
+          # Ranges, so a download that loses its connection resumes; /cut/ drops one on purpose (build/range-server.py).
+          nohup python3 build/range-server.py served 8000 > range-server.log 2>&1 &
           sleep 1
           curl -sSf -o /dev/null http://127.0.0.1:8000/blob.bin
+          curl -sSf -o /dev/null -H 'Range: bytes=0-0' http://127.0.0.1:8000/blob.bin
       - name: Build the test APK
         run: |
           ./gradlew --no-daemon :engine:assembleDebugAndroidTest -Paria2Prefix=out -Pandroid.injected.build.abi=x86_64

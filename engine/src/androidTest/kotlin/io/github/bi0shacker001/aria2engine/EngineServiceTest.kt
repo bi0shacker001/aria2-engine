@@ -55,6 +55,23 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         root.deleteRecursively()
     }
 
+    /** The SHA-256 the runner's server published for [name] (build/range-server.py writes `<name>.sha256`). */
+    private fun publishedSha256(name: String): String =
+        java.net.URL("$serverBase/$name.sha256").openStream().use { it.readBytes().toString(Charsets.US_ASCII).trim() }
+
+    private fun sha256(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun hasInternet(): Boolean {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val caps = manager.getNetworkCapabilities(manager.activeNetwork ?: return false) ?: return false
@@ -62,9 +79,9 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     }
 
     private fun completes(request: DownloadRequest, timeoutMs: Long = 120_000): DownloadStatus = runBlocking {
-        // One connection per download: the runner's python server cannot serve ranges, so a connection that adb reverse
-        // drops (seen on API 28) could not be resumed by a second one.
-        val gid = engine.add(request.copy(options = mapOf("split" to "1", "max-connection-per-server" to "1") + request.options))
+        // The runner's server answers ranges (build/range-server.py): a connection adb reverse drops is resumed, and the
+        // default split fetches the file over several connections.
+        val gid = engine.add(request.copy(options = mapOf("retry-wait" to "1") + request.options))
         withTimeout(timeoutMs) {
             engine.events.first { (event, id) -> id == gid && (event == EngineEvent.COMPLETE || event == EngineEvent.ERROR) }
         }
@@ -78,6 +95,24 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         val file = File(status.files.single().path)
         assertEquals(File(root, "job1/blob.bin").path, file.path)
         assertEquals(5_242_880L, file.length())
+        assertEquals(publishedSha256("blob.bin"), sha256(file))
+    }
+
+    @Test
+    fun aDownloadThatLosesItsConnectionResumesWhereItStopped() {
+        // The server promises the whole file on /cut/'s first answer and closes after 1 MiB; only a resume with a range
+        // can finish it (build/range-server.py). One connection, so the cut one is the only one.
+        val status = completes(
+            DownloadRequest(
+                DownloadKind.URI,
+                uris = listOf("$serverBase/cut/blob.bin"),
+                options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job5", "split" to "1", "max-connection-per-server" to "1", "max-tries" to "5"),
+            ),
+        )
+        assertEquals("complete", status.state)
+        val file = File(status.files.single().path)
+        assertEquals(5_242_880L, file.length())
+        assertEquals(publishedSha256("blob.bin"), sha256(file))
     }
 
     @Test
