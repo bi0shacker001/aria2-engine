@@ -62,6 +62,8 @@ class DownloadEngine(
         root.mkdirs()
         File(root, ".state").mkdirs()
         File(root, ".meta").mkdirs()
+        // The platform's CAs for the engine's OpenSSL, refreshed at every start (a system update may change them).
+        check(CaBundle.write(File(root, ".state/ca-bundle.pem")) > 0) { "the platform's CA store is empty" }
         val connected = CompletableDeferred<IEngine>()
         val conn = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {

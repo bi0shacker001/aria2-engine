@@ -14,6 +14,6 @@ adb shell /data/local/tmp/aria2c --version | head -12
 status=0
 echo "== HTTP from the runner"
 adb shell 'cd /data/local/tmp && rm -rf dl && mkdir dl && ./engine_smoke http://10.0.2.2:8000/blob.bin /data/local/tmp/dl 5242880' || status=1
-echo "== HTTPS with the platform's certificates"
-adb shell 'cd /data/local/tmp && rm -rf dls && mkdir dls && SSL_CERT_DIR=/system/etc/security/cacerts ./engine_smoke https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.xz /data/local/tmp/dls 1705256' || status=1
+echo "== HTTPS with the platform's certificates (one PEM bundle: Android names them by OpenSSL's old hash)"
+adb shell 'cd /data/local/tmp && rm -rf dls && mkdir dls && cat /system/etc/security/cacerts/* > ca.pem && ./engine_smoke https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.xz /data/local/tmp/dls 1705256 /data/local/tmp/ca.pem' || status=1
 exit "$status"

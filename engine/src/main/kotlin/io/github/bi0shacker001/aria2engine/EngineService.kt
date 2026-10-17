@@ -6,7 +6,6 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
-import android.system.Os
 import android.util.Log
 
 /**
@@ -63,8 +62,6 @@ open class EngineService : Service() {
                 if (isolated && Build.VERSION.SDK_INT < 30) return "error: the isolated engine needs Android 11 or later"
                 val report = EngineNative.lockdown(broker.detachFd(), arrayOf(EngineConfig.CLAIM), isolated)
                 if (report != "on") return report
-                // OpenSSL reads the platform's store, which is already in its hashed-directory form.
-                Os.setenv("SSL_CERT_DIR", "/system/etc/security/cacerts", true)
                 val options = EngineConfig.sessionOptions(keys.zip(values).toMap())
                 val session = EngineNative.sessionNew(options.keys.toTypedArray(), options.values.toTypedArray())
                 if (session == 0L) return "error: libaria2 refused the session"

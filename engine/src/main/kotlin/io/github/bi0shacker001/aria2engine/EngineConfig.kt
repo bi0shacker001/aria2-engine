@@ -15,8 +15,14 @@ object EngineConfig {
     /** The lockdown's claim: every path under it goes to the broker. */
     const val CLAIM = "/aria2"
 
-    /** aria2's state files (DHT routing tables), kept beside the downloads. */
-    private const val STATE = "$VIRTUAL_ROOT/.state"
+    /** aria2's state files (DHT routing tables, the CA bundle), kept beside the downloads. */
+    const val STATE = "$VIRTUAL_ROOT/.state"
+
+    /**
+     * The platform's CA certificates as one PEM file, written by the host at start ([CaBundle]). Android names its
+     * certificate files by OpenSSL's old subject hash, which OpenSSL 3 does not look up, so a directory will not do.
+     */
+    const val CA_BUNDLE = "$STATE/ca-bundle.pem"
 
     /** Options no caller may set: they run programs or name files outside [VIRTUAL_ROOT]. */
     private val REFUSED = setOf(
@@ -57,6 +63,7 @@ object EngineConfig {
     /** Set last, whatever was asked. */
     private val FORCED = mapOf(
         "check-certificate" to "true",
+        "ca-certificate" to CA_BUNDLE,
         "rpc-listen-all" to "false",
         "rpc-allow-origin-all" to "false",
         "dht-file-path" to "$STATE/dht.dat",

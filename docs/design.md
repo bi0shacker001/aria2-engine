@@ -59,8 +59,10 @@ download; the network's return resumes it from what is on disk, under the host's
 
 The engine opens no path itself. Under the lockdown every path call traps to the sandbox's handler, and the
 host's broker opens it under that download's rules: a download writes only its destination and aria2's
-`.aria2` control file beside it, inside the folder it was given. TLS certificates are the platform's own store,
-read-only (`SSL_CERT_DIR=/system/etc/security/cacerts`, already in OpenSSL's hashed-directory form).
+`.aria2` control file beside it, inside the folder it was given. TLS certificates are the platform's own system CAs,
+which the host writes at every start as one PEM file in the engine's state folder (`CaBundle`). Android names its
+CA files by OpenSSL's old subject hash, which OpenSSL 3 does not look up, so the directory itself will not do. The
+engine forces that bundle as `ca-certificate`: no caller can name another.
 
 ## Options
 

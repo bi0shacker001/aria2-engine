@@ -11,8 +11,13 @@ val prefixRoot = (findProperty("aria2Prefix") as String?)?.let { rootProject.fil
 android {
     namespace = "io.github.bi0shacker001.aria2engine"
     compileSdk = 35
-    // The NDK on the machine: GitHub's runners set ANDROID_NDK_LATEST_HOME, a local build ANDROID_NDK_HOME.
-    (System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME"))?.let { ndkPath = it }
+    // The NDK on the machine: GitHub's runners set ANDROID_NDK_LATEST_HOME, a local build ANDROID_NDK_HOME. AGP wants
+    // its version named too, so it is read from the NDK's own source.properties.
+    (System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME"))?.let { path ->
+        ndkPath = path
+        file("$path/source.properties").takeIf { it.isFile }?.readLines()
+            ?.firstOrNull { it.startsWith("Pkg.Revision") }?.substringAfter('=')?.trim()?.let { ndkVersion = it }
+    }
 
     defaultConfig {
         minSdk = 26

@@ -1,10 +1,10 @@
 // Drives libaria2 the way the engine service will: one session, one download, run to completion, events counted.
 //
-//   engine_smoke <uri> <dir> [<expected-bytes>]
+//   engine_smoke <uri> <dir> [<expected-bytes> [<ca-bundle.pem>]]
 //
 // Exits 0 when the download completed (and, given <expected-bytes>, the file in <dir> has that size). It prints
-// the events it saw and libaria2's error code otherwise. Certificates come from SSL_CERT_DIR (on Android,
-// /system/etc/security/cacerts, which is already in OpenSSL's hashed-directory form).
+// the events it saw and libaria2's error code otherwise. HTTPS needs <ca-bundle.pem>: Android's CA files are named by
+// OpenSSL's old subject hash, which OpenSSL 3 does not look up, so the platform's store is passed as one PEM file.
 #include <aria2/aria2.h>
 
 #include <sys/stat.h>
@@ -62,6 +62,7 @@ int main(int argc, char** argv) {
   config.downloadEventCallback = onEvent;
   config.userData = &seen;
   aria2::KeyVals options = {{"dir", argv[2]}, {"max-tries", "3"}, {"retry-wait", "1"}, {"allow-overwrite", "true"}};
+  if (argc > 4) options.emplace_back("ca-certificate", argv[4]);
   aria2::Session* session = aria2::sessionNew(options, config);
   if (!session) {
     std::fprintf(stderr, "sessionNew failed\n");
