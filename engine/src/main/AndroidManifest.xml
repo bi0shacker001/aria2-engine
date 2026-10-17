@@ -10,5 +10,14 @@
             android:process=":aria2"
             android:exported="false"
             android:isolatedProcess="true" />
+        <!--
+          The same engine on Android 8 to 10, where an isolated process cannot use a socket it was handed: a
+          process of its own under the host's UID, still under the lockdown with every path and socket brokered.
+          The host's Application runs here too, so a host must start nothing of its own in ":aria2_open".
+        -->
+        <service
+            android:name="io.github.bi0shacker001.aria2engine.EngineOpenService"
+            android:process=":aria2_open"
+            android:exported="false" />
     </application>
 </manifest>

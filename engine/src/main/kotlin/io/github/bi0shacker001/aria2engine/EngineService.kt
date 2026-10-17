@@ -17,7 +17,13 @@ import android.util.Log
  * Only the host app's main process drives it: a caller of another UID is refused, and the process that started the
  * session is the only one that may call it after.
  */
-class EngineService : Service() {
+open class EngineService : Service() {
+    /**
+     * True for the isolated engine (Android 11 and later); false for [EngineOpenService], the same engine in a process
+     * of the host's UID, still under the lockdown with every path brokered, for Android 8 to 10.
+     */
+    protected open val isolated: Boolean = true
+
     private var thread: EngineThread? = null
     private var events: IEngineEvents? = null
 
@@ -53,9 +59,9 @@ class EngineService : Service() {
             synchronized(this@EngineService) {
                 if (thread != null) return "error: started"
                 // Below Android 11 an isolated process cannot use a socket it was handed, so the brokered network does
-                // not work there (docs/design.md, "Network").
-                if (Build.VERSION.SDK_INT < 30) return "error: the isolated engine needs Android 11 or later"
-                val report = EngineNative.lockdown(broker.detachFd(), arrayOf(EngineConfig.CLAIM), true)
+                // not work there and the host binds EngineOpenService instead (docs/design.md, "Processes").
+                if (isolated && Build.VERSION.SDK_INT < 30) return "error: the isolated engine needs Android 11 or later"
+                val report = EngineNative.lockdown(broker.detachFd(), arrayOf(EngineConfig.CLAIM), isolated)
                 if (report != "on") return report
                 // OpenSSL reads the platform's store, which is already in its hashed-directory form.
                 Os.setenv("SSL_CERT_DIR", "/system/etc/security/cacerts", true)

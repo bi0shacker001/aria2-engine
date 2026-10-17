@@ -10,13 +10,14 @@ internal object EngineBroker {
 
     /**
      * Starts a broker that maps [EngineConfig.VIRTUAL_ROOT] to [realRoot] and, with [network], makes the engine's
-     * sockets. Returns the engine's end of its socket.
+     * sockets; with [systemReads] (an engine under the host's UID) it also answers the platform's read-only files.
+     * Returns the engine's end of its socket.
      */
-    fun serve(realRoot: String, network: Boolean): ParcelFileDescriptor {
-        val fd = nativeServe(EngineConfig.VIRTUAL_ROOT, realRoot, network)
+    fun serve(realRoot: String, network: Boolean, systemReads: Boolean, codeReads: List<String> = emptyList()): ParcelFileDescriptor {
+        val fd = nativeServe(EngineConfig.VIRTUAL_ROOT, realRoot, network, systemReads, codeReads.toTypedArray())
         check(fd >= 0) { "the engine's broker could not start ($fd)" }
         return ParcelFileDescriptor.adoptFd(fd)
     }
 
-    @JvmStatic private external fun nativeServe(virtualRoot: String, realRoot: String, network: Boolean): Int
+    @JvmStatic private external fun nativeServe(virtualRoot: String, realRoot: String, network: Boolean, systemReads: Boolean, codeReads: Array<String>): Int
 }

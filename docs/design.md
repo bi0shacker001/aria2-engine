@@ -15,9 +15,9 @@ docs/SPEC.md 12a "One download engine" and docs/plugin-api.md 5.7).
 2. **The engine service** (`EngineService`, `:aria2`, `android:isolatedProcess`): it confines itself to the
    host's broker with the sandbox library's lockdown (bi0shacker001/sandbox, `vendor/sandbox`), then runs one
    libaria2 session on one thread (`EngineThread`; libaria2 is not thread-safe), which alternates a turn of the
-   session's loop with the commands queued from binder threads. It needs Android 11 (API 30) or later: below
-   that an isolated process cannot use a socket it was handed. A stopped engine ends its process, because the
-   lockdown and libaria2 start once per process.
+   session's loop with the commands queued from binder threads. Below Android 11 the same engine runs as
+   `EngineOpenService` (see Processes). A stopped engine ends its process, because the lockdown and libaria2 start
+   once per process.
 3. **The JNI layer** (`native/engine`, `libaria2engine.so`, in the engine process only) and **the broker**
    (`native/broker`, `libaria2broker.so`, in the host's process; it never loads libaria2).
 4. **The Kotlin API** (`DownloadEngine`) for the host's main process: start, add (HTTP, HTTPS, FTP, torrent,
@@ -25,6 +25,23 @@ docs/SPEC.md 12a "One download engine" and docs/plugin-api.md 5.7).
    typed binder interface (`IEngine`) whose every method checks that the caller is the host's own UID and the
    process that started the session. aria2's JSON-RPC is on for the host as well: loopback only, through the
    broker, with a secret made for each run.
+
+## Processes
+
+The owner: "We have our own sandbox library, remember? That's the bare minimum. Isolate it as a separate process if
+we CAN, but if not, sandboxing it ourselves is better than nothing". So the engine always runs in a process of its
+own under the sandbox library's lockdown and the host's broker, on every Android version:
+
+- **Android 11 (API 30) and later:** `EngineService`, an isolated process under a UID of its own. Its paths outside
+  the engine's folder stay the kernel's, where that UID can reach nothing of the host's.
+- **Android 8 to 10 (API 26 to 29):** `EngineOpenService` (`:aria2_open`), a process under the host's UID, because
+  an isolated process there cannot use a socket it was handed. The lockdown sends every path it names to the
+  broker, not only the engine's folder. The broker answers that folder, the platform's read-only code and data, and
+  the host's own APKs and native libraries, read-only; never the host's data or shared storage. Its sockets are the
+  broker's, as in the isolated engine. It becomes the isolated engine when the sandbox's byte relay covers these
+  versions.
+
+The host's `Application` also runs in `:aria2_open`, so a host must start nothing of its own there.
 
 ## Network
 
@@ -81,7 +98,7 @@ Enginehost bundle that AAR, pinned by digest.
 ## Testing
 
 - **On the JVM:** `EngineConfigTest`, `UserAgentTest` and `DownloadStatusTest`.
-- **On the emulator** (API 30 and 34), `EngineServiceTest` exercises the whole path: the isolated process, the
+- **On the emulator** (API 28 under the host's UID; 30 and 34 isolated), `EngineServiceTest` exercises the whole path: the isolated process, the
   lockdown, the broker's files and sockets, and libaria2. It checks:
   - HTTP from the runner into the host's folder;
   - HTTPS with the platform's certificates;

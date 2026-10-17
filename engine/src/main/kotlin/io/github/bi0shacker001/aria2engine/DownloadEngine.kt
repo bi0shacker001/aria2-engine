@@ -44,6 +44,12 @@ class DownloadEngine(
 
     private val app = context.applicationContext
 
+    /**
+     * Whether the engine runs isolated, under a UID of its own: Android 11 and later. Below that it runs in a process
+     * of the host's UID, still under the sandbox lockdown with every path brokered (docs/design.md, "Processes").
+     */
+    val isolated: Boolean = Build.VERSION.SDK_INT >= 30
+
     /** Starts the engine process and its session with [options] (aria2's global options). */
     suspend fun start(options: Map<String, String> = emptyMap()): DownloadEngine {
         check(engine == null) { "the engine is started" }
@@ -64,12 +70,11 @@ class DownloadEngine(
                 connected.completeExceptionally(IllegalStateException("the engine gave no binder"))
             }
         }
-        val intent = Intent(app, EngineService::class.java)
-        val bound = if (Build.VERSION.SDK_INT >= 29) {
+        val bound = if (isolated) {
             // A new instance each start: a stopped engine's process ends, and must not be the one bound again.
-            app.bindIsolatedService(intent, Context.BIND_AUTO_CREATE, "aria2-${System.nanoTime()}", app.mainExecutor, conn)
+            app.bindIsolatedService(Intent(app, EngineService::class.java), Context.BIND_AUTO_CREATE, "aria2-${System.nanoTime()}", app.mainExecutor, conn)
         } else {
-            app.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+            app.bindService(Intent(app, EngineOpenService::class.java), conn, Context.BIND_AUTO_CREATE)
         }
         check(bound) { "the engine service could not be bound" }
         connection = conn
@@ -80,7 +85,11 @@ class DownloadEngine(
             global["rpc-listen-port"] = rpcPort.toString()
             global["rpc-secret"] = rpcSecret
         }
-        val broker = EngineBroker.serve(root.path, network = true)
+        // An engine under the host's UID names every path through the broker: the platform's files and the host's own
+        // code (its APKs and native libraries) read-only, never the host's data.
+        val code = if (isolated) emptyList() else listOfNotNull(app.applicationInfo.sourceDir, app.applicationInfo.nativeLibraryDir) +
+            app.applicationInfo.splitSourceDirs.orEmpty()
+        val broker = EngineBroker.serve(root.path, network = true, systemReads = !isolated, codeReads = code)
         val report = try {
             remote.start(broker, global.keys.toTypedArray(), global.values.toTypedArray(), object : IEngineEvents.Stub() {
                 override fun onEvent(event: Int, gid: String) {

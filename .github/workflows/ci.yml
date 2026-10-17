@@ -114,7 +114,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [30, 34]
+        # 28: the engine under the host's UID (EngineOpenService); 30 and 34: the isolated engine.
+        api: [28, 30, 34]
     steps:
       - uses: actions/checkout@v4
         with:

@@ -114,18 +114,21 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
   return gOnEvent ? JNI_VERSION_1_6 : JNI_ERR;
 }
 
-// Confines this process before libaria2 runs (docs/design.md, "Files" and "Network"): every path under a claim goes
-// to the broker in the host's process over brokerFd, and with brokeredNet the internet sockets are the broker's.
-// Returns "on" or "error: <why>"; the service refuses to start a session on an error.
+// Confines this process before libaria2 runs (docs/design.md, "Files" and "Network"). In an isolated process
+// (passthrough) the paths under a claim go to the broker in the host's process over brokerFd and the rest stay the
+// kernel's, where the isolated UID decides; in a process of the host's UID every path goes to the broker. The internet
+// sockets are always the broker's. Returns "on" or "error: <why>"; the service refuses to start a session on an error.
 JNIEXPORT jstring JNICALL Java_io_github_bi0shacker001_aria2engine_EngineNative_lockdown(
-    JNIEnv* env, jclass, jint brokerFd, jobjectArray claims, jboolean brokeredNet) {
+    JNIEnv* env, jclass, jint brokerFd, jobjectArray claims, jboolean passthrough) {
   std::vector<std::string> claimed = strings(env, claims);
   std::vector<const char*> pointers;
   for (auto& claim : claimed) pointers.push_back(claim.c_str());
   sbx_lockdown_options options{};
-  options.flags = SBX_LOCK_LOG_SOCKET | SBX_LOCK_PASSTHROUGH | (brokeredNet ? SBX_LOCK_NET_BROKERED : 0u);
-  options.claims = pointers.data();
-  options.claim_count = static_cast<unsigned>(pointers.size());
+  options.flags = SBX_LOCK_LOG_SOCKET | SBX_LOCK_NET_BROKERED | (passthrough ? SBX_LOCK_PASSTHROUGH : 0u);
+  if (passthrough) {
+    options.claims = pointers.data();
+    options.claim_count = static_cast<unsigned>(pointers.size());
+  }
   int result = sbx_lockdown(brokerFd, &options);
   if (result != 0) {
     char buffer[160];

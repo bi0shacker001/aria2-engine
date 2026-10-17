@@ -18,7 +18,7 @@ internal object EngineNative {
         listener?.invoke(event, gid)
     }
 
-    @JvmStatic external fun lockdown(brokerFd: Int, claims: Array<String>, brokeredNet: Boolean): String
+    @JvmStatic external fun lockdown(brokerFd: Int, claims: Array<String>, passthrough: Boolean): String
     @JvmStatic external fun sessionNew(keys: Array<String>, values: Array<String>): Long
     @JvmStatic external fun runOnce(session: Long): Int
     @JvmStatic external fun addUri(session: Long, uris: Array<String>, keys: Array<String>, values: Array<String>): String
