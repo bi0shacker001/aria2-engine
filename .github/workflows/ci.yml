@@ -41,6 +41,7 @@ jobs:
     # platform's own certificates.
     needs: [android-build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +71,8 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
           script: build/wait-network.sh && build/emulator-smoke.sh artifact
 
   library:
@@ -111,6 +113,7 @@ jobs:
     # The whole path on a device: isolated engine process, lockdown, the host's broker, libaria2.
     needs: [android-build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -135,8 +138,10 @@ jobs:
           (cd served && nohup python3 -m http.server 8000 >/dev/null 2>&1 &)
           sleep 1
           curl -sSf -o /dev/null http://127.0.0.1:8000/blob.bin
-      - name: Build the test APKs
-        run: ./gradlew --no-daemon :engine:assembleDebugAndroidTest -Paria2Prefix=out -Pandroid.injected.build.abi=x86_64
+      - name: Build the test APK
+        run: |
+          ./gradlew --no-daemon :engine:assembleDebugAndroidTest -Paria2Prefix=out -Pandroid.injected.build.abi=x86_64
+          echo "TEST_APK=$(find engine/build -name '*androidTest*.apk' | head -1)" >> "$GITHUB_ENV"
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -149,8 +154,10 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-          script: build/wait-network.sh && ./gradlew --no-daemon :engine:connectedDebugAndroidTest -Paria2Prefix=out -Pandroid.injected.build.abi=x86_64 || (adb logcat -d | grep -iE 'aria2|sandbox|F DEBUG|AndroidRuntime|TestRunner|Exception' | tail -200; exit 1)
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          # am instrument, not Gradle's connected task: no second adb client beside the runner's.
+          script: build/emulator-instrument.sh ${{ env.TEST_APK }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
