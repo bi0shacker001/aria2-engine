@@ -73,7 +73,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
-          script: build/wait-network.sh && build/emulator-smoke.sh artifact
+          script: build/emulator-smoke.sh artifact
 
   library:
     # The Android library both hosts bundle: the engine service, the JNI layer and the Kotlin API, with its unit tests.

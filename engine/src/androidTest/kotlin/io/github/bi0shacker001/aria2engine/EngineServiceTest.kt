@@ -1,5 +1,8 @@
 package io.github.bi0shacker001.aria2engine
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -10,6 +13,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,7 +33,8 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     }
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    // CI's emulator reaches the runner at 10.0.2.2; a local device passes -e serverBase http://127.0.0.1:8000 (adb reverse).
+    // The runner's test server: CI and a local device both use adb reverse and -e serverBase http://127.0.0.1:8000;
+    // 10.0.2.2 is the default for an emulator with a working network.
     private val serverBase = InstrumentationRegistry.getArguments().getString("serverBase") ?: "http://10.0.2.2:8000"
     private val root = File(context.filesDir, "engine-test")
     private lateinit var engine: DownloadEngine
@@ -48,6 +53,12 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         File(root, ".state/engine.log").takeIf { it.isFile }?.readLines()?.takeLast(60)?.forEach { Log.i("aria2engine.test", it) }
         if (::engine.isInitialized) engine.stop()
         root.deleteRecursively()
+    }
+
+    private fun hasInternet(): Boolean {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = manager.getNetworkCapabilities(manager.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun completes(request: DownloadRequest, timeoutMs: Long = 120_000): DownloadStatus = runBlocking {
@@ -69,6 +80,9 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
 
     @Test
     fun httpsUsesThePlatformsCertificates() {
+        // A CI emulator's own network can be dead (ConnectivityService "Machine is not on the network"); the other tests
+        // reach the runner over adb reverse and do not need it.
+        assumeTrue("the device has no internet", hasInternet())
         val status = completes(DownloadRequest(DownloadKind.URI, uris = listOf("https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.xz"), options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job2")))
         assertEquals("complete", status.state)
         assertEquals(1_705_256L, File(status.files.single().path).length())
