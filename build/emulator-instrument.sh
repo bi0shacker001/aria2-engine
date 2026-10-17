@@ -10,7 +10,7 @@
 set -uo pipefail
 
 apk="$1"
-base="${2:-http://127.0.0.1:8000}"
+base="${2:-}"
 runner="io.github.bi0shacker001.aria2engine.test/androidx.test.runner.AndroidJUnitRunner"
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -23,6 +23,12 @@ for attempt in 1 2 3 4 5; do
 done
 # The tests that need the internet skip themselves when the device has none; say which it is.
 adb shell ping -c1 -W3 github.com 2>&1 | head -2 || true
+if [ -z "$base" ]; then
+  # The emulator's own network, when it works, is steadier for a 5 MiB file than adb reverse (API 28 dropped the
+  # tunnel mid-file); when it is dead, loopback over adb reverse needs none.
+  if adb shell ping -c1 -W3 10.0.2.2 >/dev/null 2>&1; then base=http://10.0.2.2:8000; else base=http://127.0.0.1:8000; fi
+fi
+echo "test server: $base"
 case "$base" in
   http://127.0.0.1:*) port="${base##*:}"; adb reverse "tcp:$port" "tcp:$port" || { sleep 3; adb reverse "tcp:$port" "tcp:$port"; } || exit 1 ;;
 esac
