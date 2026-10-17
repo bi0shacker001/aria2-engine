@@ -31,6 +31,12 @@ class DownloadEngine(
     val root: File,
     private val rpc: Boolean = true,
     val rpcPort: Int = 6800,
+    /**
+     * Run the engine as an Android isolated process (API 30 and later). Off by default: the owner's order is the
+     * sandboxed engine first, "once we've tested it with just our sandbox, we should build the android isolation
+     * path", so the isolated one is turned on per host once it has passed its own rig check.
+     */
+    androidIsolation: Boolean = false,
 ) {
     private var engine: IEngine? = null
     private var connection: ServiceConnection? = null
@@ -45,10 +51,10 @@ class DownloadEngine(
     private val app = context.applicationContext
 
     /**
-     * Whether the engine runs isolated, under a UID of its own: Android 11 and later. Below that it runs in a process
-     * of the host's UID, still under the sandbox lockdown with every path brokered (docs/design.md, "Processes").
+     * Whether the engine runs isolated, under a UID of its own: asked for, on Android 11 and later. Otherwise it runs
+     * in a process of the host's UID, under the sandbox lockdown with every path brokered (docs/design.md, "Processes").
      */
-    val isolated: Boolean = Build.VERSION.SDK_INT >= 30
+    val isolated: Boolean = androidIsolation && Build.VERSION.SDK_INT >= 30
 
     /** Starts the engine process and its session with [options] (aria2's global options). */
     suspend fun start(options: Map<String, String> = emptyMap()): DownloadEngine {

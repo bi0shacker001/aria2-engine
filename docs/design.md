@@ -41,6 +41,11 @@ own under the sandbox library's lockdown and the host's broker, on every Android
   broker's, as in the isolated engine. It becomes the isolated engine when the sandbox's byte relay covers these
   versions.
 
+The order (the owner: "all my devices run 11 or later, so once we've tested it with just our sandbox, we should build
+the android isolation path"): the sandboxed engine first, on every version, Android 11 and later included. Then the
+isolated one, kept in the library and chosen per host with `DownloadEngine(androidIsolation = true)`, which defaults
+to off until it has passed its own rig check.
+
 The host's `Application` also runs in `:aria2_open`, so a host must start nothing of its own there.
 
 ## Network

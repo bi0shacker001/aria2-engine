@@ -1,6 +1,5 @@
 package io.github.bi0shacker001.aria2engine
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -13,13 +12,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.Parameterized
 
 /**
  * The whole path on a device: the isolated engine process, the sandbox lockdown, the host's broker (files and
  * sockets) and libaria2. CI serves a 5 MiB file from the runner, which the emulator reaches at 10.0.2.2:8000.
  */
-@RunWith(AndroidJUnit4::class)
-class EngineServiceTest {
+@RunWith(Parameterized::class)
+class EngineServiceTest(private val androidIsolation: Boolean) {
+    companion object {
+        /** The sandboxed engine everywhere, and the isolated one where Android has it (API 30 and later). */
+        @JvmStatic
+        @Parameterized.Parameters(name = "androidIsolation={0}")
+        fun modes(): List<Array<Any>> = listOfNotNull(arrayOf<Any>(false), if (android.os.Build.VERSION.SDK_INT >= 30) arrayOf<Any>(true) else null)
+    }
+
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val root = File(context.filesDir, "engine-test")
     private lateinit var engine: DownloadEngine
@@ -27,7 +34,8 @@ class EngineServiceTest {
     @Before
     fun startEngine() = runBlocking {
         root.deleteRecursively()
-        engine = DownloadEngine(context, root).start()
+        engine = DownloadEngine(context, root, androidIsolation = androidIsolation).start()
+        assertEquals(androidIsolation, engine.isolated)
     }
 
     @After
