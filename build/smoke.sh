@@ -16,8 +16,8 @@ case "$abi" in
 esac
 cxx="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/${triple}${api}-clang++"
 prefix="$out/prefix"
-libs="$(PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig" pkg-config --static --libs libaria2)"
-# shellcheck disable=SC2086
+# aria2's libaria2.pc lists no static dependencies, so they are named here, in link order.
 "$cxx" -std=c++11 -Os -fPIE -pie -I"$prefix/include" "$here/native/smoke/engine_smoke.cc" \
-  -o "$out/engine_smoke" -L"$prefix/lib" $libs -static-libstdc++
+  -o "$out/engine_smoke" "$prefix/lib/libaria2.a" "$prefix/lib/libssl.a" "$prefix/lib/libcrypto.a" \
+  "$prefix/lib/libexpat.a" -lz -ldl -llog -static-libstdc++
 file "$out/engine_smoke"
