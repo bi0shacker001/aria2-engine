@@ -146,6 +146,10 @@ class DownloadEngine(
      */
     fun add(request: DownloadRequest): String {
         val options = UserAgent.optionsFor(request.effectiveKind, request.options, userAgent())
+        // The engine cannot make its download's folder: aria2 makes a missing one parent by parent from the top, and the
+        // broker answers only the engine's own folder, not "/aria2" above it (stat /aria2, then mkdir /aria2: refused,
+        // and the download dies with errorCode=1 before it connects). The host makes it, so aria2 finds it present.
+        EngineConfig.perDownload(options)["dir"]?.takeIf { it != EngineConfig.VIRTUAL_ROOT }?.let { File(realPath(it)).mkdirs() }
         val keys = options.keys.toTypedArray()
         val values = options.values.toTypedArray()
         return when (request.kind) {
