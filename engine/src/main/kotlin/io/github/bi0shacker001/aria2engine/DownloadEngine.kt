@@ -11,6 +11,8 @@ import android.webkit.WebView
 import java.io.File
 import java.security.SecureRandom
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -64,6 +66,7 @@ class DownloadEngine(
         File(root, ".meta").mkdirs()
         // The platform's CAs for the engine's OpenSSL, refreshed at every start (a system update may change them).
         check(CaBundle.write(File(root, ".state/ca-bundle.pem")) > 0) { "the platform's CA store is empty" }
+        gone = CountDownLatch(1)
         val connected = CompletableDeferred<IEngine>()
         val conn = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -72,6 +75,7 @@ class DownloadEngine(
 
             override fun onServiceDisconnected(name: ComponentName?) {
                 engine = null
+                gone.countDown()
             }
 
             override fun onNullBinding(name: ComponentName?) {
@@ -89,6 +93,8 @@ class DownloadEngine(
         try {
             startSession(withTimeout(30_000) { connected.await() }, options)
         } catch (e: Throwable) {
+            // An engine process that answered but could not start ends itself (EngineService); wait for that.
+            processEnding = connected.isCompleted && !connected.isCancelled
             stop()
             throw e
         }
@@ -189,12 +195,26 @@ class DownloadEngine(
         return if (relative.isEmpty()) EngineConfig.VIRTUAL_ROOT else "${EngineConfig.VIRTUAL_ROOT}/$relative"
     }
 
+    /**
+     * Stops the engine and waits (at most 15 s, so not from the main thread) for its process to end. The lockdown and
+     * libaria2 start once per process, so a start that bound the old process again would find them used: the second
+     * sbx_lockdown answers -114, which failed every start after the first in EngineOpenService.
+     */
     fun stop() {
-        runCatching { engine?.stop() }
+        val running = engine
+        runCatching { running?.stop() }
+        if (running != null || processEnding) gone.await(15, TimeUnit.SECONDS)
+        processEnding = false
         engine = null
         connection?.let { runCatching { app.unbindService(it) } }
         connection = null
     }
+
+    @Volatile
+    private var gone = CountDownLatch(1)
+
+    @Volatile
+    private var processEnding = false
 
     private var agent: Pair<Long, String>? = null
 
