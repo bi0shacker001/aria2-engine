@@ -55,6 +55,16 @@ connects and accepts them. Names resolve with `getaddrinfo` through netd's `dnsp
 connects, so aria2 is built without c-ares (which would send its own DNS packets). Connection loss pauses every
 download; the network's return resumes it from what is on disk, under the host's network rules.
 
+**The internet only (2026-10-22, Droidtop/tracker#577; droidtop's owner: "Block local network").** A torrent's
+peers and web seeds, a Metalink's mirrors and any redirect the host did not walk itself are addresses no host
+checked, so the broker puts every `connect` to `net_scope` (native/broker/net_scope.c) and refuses the device
+itself and the network it is on: loopback, private, carrier NAT (100.64.0.0/10), link-local, multicast, reserved
+and unspecified addresses, also as IPv4-mapped or NAT64 IPv6, and anything it cannot read. A system socket (the
+resolver, fwmarkd) is unaffected, and so are listening and accepting. A host turns it off with
+`DownloadEngine(localNetwork = true)`: the on-device tests do, for their server on the runner. **Not covered:** a
+UDP datagram sent without a connect names its address in memory the broker never sees (the sandbox's `sbx.h`), so
+DHT packets can still go to a local address; they carry no host data.
+
 ## Files
 
 The engine opens no path itself. Under the lockdown every path call traps to the sandbox's handler, and the

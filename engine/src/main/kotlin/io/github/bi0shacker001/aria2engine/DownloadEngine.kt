@@ -39,6 +39,12 @@ class DownloadEngine(
      * path", so the isolated one is turned on per host once it has passed its own rig check.
      */
     androidIsolation: Boolean = false,
+    /**
+     * Let the engine connect to the device itself and the network it is on (loopback, private, link-local, carrier NAT).
+     * Off by default: a host's downloads come from the internet, and a torrent's peers, a web seed or a Metalink's
+     * mirror is an address no host checked (docs/design.md, "Network"). A test against a server on the runner turns it on.
+     */
+    private val localNetwork: Boolean = false,
 ) {
     private var engine: IEngine? = null
     private var connection: ServiceConnection? = null
@@ -112,7 +118,7 @@ class DownloadEngine(
         // code (its APKs and native libraries) read-only, never the host's data.
         val code = if (isolated) emptyList() else listOfNotNull(app.applicationInfo.sourceDir, app.applicationInfo.nativeLibraryDir) +
             app.applicationInfo.splitSourceDirs.orEmpty()
-        val broker = EngineBroker.serve(root.path, network = true, systemReads = !isolated, codeReads = code)
+        val broker = EngineBroker.serve(root.path, network = true, systemReads = !isolated, codeReads = code, localNetwork = localNetwork)
         val report = try {
             remote.start(broker, global.keys.toTypedArray(), global.values.toTypedArray(), object : IEngineEvents.Stub() {
                 override fun onEvent(event: Int, gid: String) {

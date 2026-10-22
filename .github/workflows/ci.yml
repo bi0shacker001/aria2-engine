@@ -9,6 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  net-scope:
+    # Which addresses the engine may connect to (native/broker/net_scope.c), on the runner: it is plain C.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: net_scope's cases
+        run: |
+          cc -Wall -Wextra -Werror -std=c11 -D_DEFAULT_SOURCE native/broker/net_scope.c native/broker/net_scope_test.c -o net_scope_test
+          ./net_scope_test
+
   android-build:
     # libaria2 and its dependencies for each ABI droidtop and Enginehost ship, plus the smoke test.
     runs-on: ubuntu-24.04

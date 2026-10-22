@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <android/log.h>
 
+#include "net_scope.h"
 #include "sbx.h"
 
 #define TAG "aria2engine.broker"
@@ -29,12 +30,27 @@ static void audit(void *context, const struct sbx_access *access, int result) {
 }
 
 /*
+ * Without the local network, every connect the engine asks for is put to net_scope: the device itself and the network it
+ * is on are refused, so a torrent's peers, a web seed, a Metalink's mirror or a redirect the host did not walk can never
+ * reach a router's page, a NAS or a service on loopback. A system socket (named by its path) keeps the rules' verdict.
+ * A UDP datagram sent without a connect names its address in memory the broker never sees (sbx.h), so DHT packets
+ * are not covered by this.
+ */
+static int decide(void *context, const struct sbx_access *access) {
+    (void) context;
+    if (strcmp(access->op, "connect") != 0) return SBX_KEEP;
+    const char *address = access->resolved && access->resolved[0] ? access->resolved : access->asked;
+    if (address && address[0] == '/') return SBX_KEEP;
+    return net_scope_is_local(address) ? -EACCES : SBX_KEEP;
+}
+
+/*
  * Starts a broker on its own thread for the engine process. Returns the engine's end of the socket (the host
  * hands it over and closes its copy), or a negative errno.
  */
 JNIEXPORT jint JNICALL Java_io_github_bi0shacker001_aria2engine_EngineBroker_nativeServe(
-    JNIEnv *env, jclass clazz, jstring virtual_root, jstring real_root, jboolean network, jboolean system_reads,
-    jobjectArray extra_reads) {
+    JNIEnv *env, jclass clazz, jstring virtual_root, jstring real_root, jboolean network, jboolean local_network,
+    jboolean system_reads, jobjectArray extra_reads) {
     (void) clazz;
     int pair[2];
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, pair) != 0) return -errno;
@@ -70,7 +86,8 @@ JNIEXPORT jint JNICALL Java_io_github_bi0shacker001_aria2engine_EngineBroker_nat
     if (rv == 0 && network) {
         /* Out and in for the engine's transfers and its RPC port, and names through netd's resolver; bionic
          * reports each connect and accept to fwmarkd, which the broker connects for it too. */
-        sbx_policy_set_net(policy, SBX_NET_CONNECT | SBX_NET_LISTEN | SBX_NET_RESOLVE);
+        sbx_policy_set_net(policy, SBX_NET_CONNECT | SBX_NET_LISTEN | SBX_NET_RESOLVE | (local_network ? 0u : SBX_NET_DECIDE));
+        if (!local_network) sbx_policy_set_decider(policy, decide, NULL);
         sbx_policy_add_system_socket(policy, "/dev/socket/dnsproxyd", SBX_NET_RESOLVE);
         sbx_policy_add_system_socket(policy, "/dev/socket/fwmarkd", SBX_NET_CONNECT | SBX_NET_LISTEN);
     }

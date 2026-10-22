@@ -43,7 +43,8 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     fun startEngine() = runBlocking {
         root.deleteRecursively()
         // Info-level log: a session that fails says why in the failure's message (DownloadEngine.start).
-        engine = DownloadEngine(context, root, androidIsolation = androidIsolation).start(mapOf("log-level" to "info"))
+        // The test server is on the runner (10.0.2.2, or loopback over adb reverse): the local network is let through here.
+        engine = DownloadEngine(context, root, androidIsolation = androidIsolation, localNetwork = true).start(mapOf("log-level" to "info"))
         assertEquals(androidIsolation, engine.isolated)
     }
 
@@ -96,6 +97,18 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         assertEquals(File(root, "job1/blob.bin").path, file.path)
         assertEquals(5_242_880L, file.length())
         assertEquals(publishedSha256("blob.bin"), sha256(file))
+    }
+
+    @Test
+    fun withoutTheLocalNetworkTheRunnersServerCannotBeReached() {
+        // A host's engine as it ships: the runner (10.0.2.2, or loopback over adb reverse) is the local network.
+        engine.stop()
+        engine = runBlocking { DownloadEngine(context, root, androidIsolation = androidIsolation).start(mapOf("log-level" to "info")) }
+        val status = completes(
+            DownloadRequest(DownloadKind.URI, uris = listOf("$serverBase/blob.bin"), options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job9", "max-tries" to "1")),
+        )
+        assertEquals("error", status.state)
+        assertEquals(0L, status.completedLength)
     }
 
     @Test

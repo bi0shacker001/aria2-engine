@@ -23,7 +23,7 @@ target_link_libraries(aria2engine aria2_static ssl_static crypto_static expat_st
 target_link_options(aria2engine PRIVATE "-Wl,--exclude-libs,ALL" "-Wl,-z,max-page-size=16384")
 
 # The host process: the broker only, no libaria2.
-add_library(aria2broker SHARED broker/broker_jni.c)
+add_library(aria2broker SHARED broker/broker_jni.c broker/net_scope.c)
 target_include_directories(aria2broker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/sandbox/include)
 target_link_libraries(aria2broker sbx log)
 target_link_options(aria2broker PRIVATE "-Wl,-z,max-page-size=16384")
