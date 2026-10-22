@@ -109,6 +109,19 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
         )
         assertEquals("error", status.state)
         assertEquals(0L, status.completedLength)
+        // A pass for exactly the server the host walked to opens it, and only it.
+        val server = java.net.URI(serverBase)
+        val address = java.net.InetAddress.getByName(server.host)
+        engine.allowLocal(address, server.port)
+        try {
+            val passed = completes(
+                DownloadRequest(DownloadKind.URI, uris = listOf("$serverBase/blob.bin"), options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job10")),
+            )
+            assertEquals("complete", passed.state)
+            assertEquals(publishedSha256("blob.bin"), sha256(File(passed.files.single().path)))
+        } finally {
+            engine.revokeLocal(address, server.port)
+        }
     }
 
     @Test

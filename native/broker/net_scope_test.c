@@ -1,6 +1,7 @@
-/* net_scope.c on the build machine: cc -Wall -Werror net_scope.c net_scope_test.c && ./a.out */
+/* net_scope.c on the build machine: cc -Wall -Werror -pthread net_scope.c net_scope_test.c && ./a.out */
 #include "net_scope.h"
 
+#include <errno.h>
 #include <stdio.h>
 
 static int failures;
@@ -8,6 +9,14 @@ static int failures;
 static void expect(const char *words, int local) {
     if (net_scope_is_local(words) != local) {
         fprintf(stderr, "FAIL %s: expected %s\n", words, local ? "local" : "public");
+        failures++;
+    }
+}
+
+/* One step of a sequence: the calls run in the order written. */
+static void check(int got, int want, const char *what) {
+    if (got != want) {
+        fprintf(stderr, "FAIL %s: got %d, expected %d\n", what, got, want);
         failures++;
     }
 }
@@ -30,6 +39,23 @@ int main(void) {
         fprintf(stderr, "FAIL NULL\n");
         failures++;
     }
+
+    /* Passes: exactly the address and port vouched for, counted, an IPv6 address however it is written. */
+    check(net_scope_is_allowed("192.168.1.20:443"), 0, "nothing vouched for yet");
+    check(net_scope_allow("192.168.1.20:443"), 0, "allow");
+    check(net_scope_is_allowed("192.168.1.20:443"), 1, "the vouched-for address");
+    check(net_scope_is_allowed("192.168.1.20:6881"), 0, "another port of it");
+    check(net_scope_is_allowed("192.168.1.21:443"), 0, "another address");
+    check(net_scope_allow("192.168.1.20:443"), 0, "a second download to it");
+    check(net_scope_revoke("192.168.1.20:443"), 0, "the first one ends");
+    check(net_scope_is_allowed("192.168.1.20:443"), 1, "still open for the second");
+    check(net_scope_revoke("192.168.1.20:443"), 0, "the second one ends");
+    check(net_scope_is_allowed("192.168.1.20:443"), 0, "closed when both ended");
+    check(net_scope_allow("[fd7a:115c:a1e0::1]:8080"), 0, "allow an IPv6 tailnet address");
+    check(net_scope_is_allowed("[fd7a:115c:a1e0:0:0:0:0:1]:8080"), 1, "the same address written out");
+    check(net_scope_allow("not words"), -EINVAL, "unreadable");
+    check(net_scope_allow("10.0.0.1:99999"), -EINVAL, "a port out of range");
+    check(net_scope_is_allowed("fe80::1%wlan0:80"), 0, "a zone is never vouched for");
     printf("%s\n", failures ? "net_scope: FAILED" : "net_scope: ok");
     return failures != 0;
 }

@@ -189,6 +189,16 @@ class DownloadEngine(
     fun setLimits(gid: String, downloadBytesPerSecond: Long = 0, uploadBytesPerSecond: Long = 0): Int =
         changeOption(gid, mapOf("max-download-limit" to downloadBytesPerSecond.toString(), "max-upload-limit" to uploadBytesPerSecond.toString()))
 
+    /**
+     * Lets the engine connect to [address] at [port] on the local network, for an HTTP download the host walked there
+     * itself (a NAS, a tailnet machine): with [localNetwork] off, that is the only local address it may reach, so a
+     * torrent's peers still never do. Each call needs its [revokeLocal] when the download ends. Not needed, and harmless,
+     * for a public address.
+     */
+    fun allowLocal(address: java.net.InetAddress, port: Int) = EngineBroker.allowLocal(address, port)
+
+    fun revokeLocal(address: java.net.InetAddress, port: Int) = EngineBroker.revokeLocal(address, port)
+
     fun status(gid: String): DownloadStatus? = remote().status(gid)?.let { DownloadStatus.parse(gid, it, ::realPath) }
 
     /** Every active, waiting or paused download. */

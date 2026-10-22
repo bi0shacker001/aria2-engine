@@ -61,7 +61,16 @@ checked, so the broker puts every `connect` to `net_scope` (native/broker/net_sc
 itself and the network it is on: loopback, private, carrier NAT (100.64.0.0/10), link-local, multicast, reserved
 and unspecified addresses, also as IPv4-mapped or NAT64 IPv6, and anything it cannot read. A system socket (the
 resolver, fwmarkd) is unaffected, and so are listening and accepting. A host turns it off with
-`DownloadEngine(localNetwork = true)`: the on-device tests do, for their server on the runner. **Not covered:** a
+`DownloadEngine(localNetwork = true)`: the on-device tests do, for their server on the runner.
+
+**Passes (v0.1.2; droidtop's owner: block torrent traffic across the local network, not a person's own servers).**
+The broker cannot tell which download a connect is for, so the host vouches for addresses instead: when it walked an
+HTTP download itself to a server on the local network or a tailnet (a NAS, `nas.tailnet.ts.net` on 100.64.0.0/10),
+it calls `DownloadEngine.allowLocal(address, port)` before adding it and `revokeLocal` when it ends. A connect to
+exactly that address and port is let through; every other local address stays refused, so a torrent's peers, web
+seeds and a Metalink's mirrors still never reach the network. Passes are counted, so two downloads from one server
+do not close each other's. While a pass is open, a peer at that very address and port could connect too: it would
+have to be the person's own server, during their own download. **Not covered:** a
 UDP datagram sent without a connect names its address in memory the broker never sees (the sandbox's `sbx.h`), so
 DHT packets can still go to a local address; they carry no host data.
 

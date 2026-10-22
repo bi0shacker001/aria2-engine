@@ -32,7 +32,9 @@ static void audit(void *context, const struct sbx_access *access, int result) {
 /*
  * Without the local network, every connect the engine asks for is put to net_scope: the device itself and the network it
  * is on are refused, so a torrent's peers, a web seed, a Metalink's mirror or a redirect the host did not walk can never
- * reach a router's page, a NAS or a service on loopback. A system socket (named by its path) keeps the rules' verdict.
+ * reach a router's page, a NAS or a service on loopback. The one way through is a pass: an address and port the host
+ * vouched for because it walked an HTTP download there itself (nativeAllowLocal). A system socket (named by its path)
+ * keeps the rules' verdict.
  * A UDP datagram sent without a connect names its address in memory the broker never sees (sbx.h), so DHT packets
  * are not covered by this.
  */
@@ -41,7 +43,24 @@ static int decide(void *context, const struct sbx_access *access) {
     if (strcmp(access->op, "connect") != 0) return SBX_KEEP;
     const char *address = access->resolved && access->resolved[0] ? access->resolved : access->asked;
     if (address && address[0] == '/') return SBX_KEEP;
-    return net_scope_is_local(address) ? -EACCES : SBX_KEEP;
+    return net_scope_is_local(address) && !net_scope_is_allowed(address) ? -EACCES : SBX_KEEP;
+}
+
+/* A pass for one local address and port ("192.168.1.20:443", "[fd7a::1]:443"), counted; 0 or a negative errno. */
+JNIEXPORT jint JNICALL Java_io_github_bi0shacker001_aria2engine_EngineBroker_nativeAllowLocal(JNIEnv *env, jclass clazz, jstring words) {
+    (void) clazz;
+    const char *text = (*env)->GetStringUTFChars(env, words, NULL);
+    int rv = net_scope_allow(text);
+    (*env)->ReleaseStringUTFChars(env, words, text);
+    return rv;
+}
+
+JNIEXPORT jint JNICALL Java_io_github_bi0shacker001_aria2engine_EngineBroker_nativeRevokeLocal(JNIEnv *env, jclass clazz, jstring words) {
+    (void) clazz;
+    const char *text = (*env)->GetStringUTFChars(env, words, NULL);
+    int rv = net_scope_revoke(text);
+    (*env)->ReleaseStringUTFChars(env, words, text);
+    return rv;
 }
 
 /*

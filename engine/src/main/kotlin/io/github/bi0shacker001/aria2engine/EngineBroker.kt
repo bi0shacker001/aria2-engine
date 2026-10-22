@@ -25,6 +25,30 @@ internal object EngineBroker {
         return ParcelFileDescriptor.adoptFd(fd)
     }
 
+    /**
+     * A pass for [address] at [port] on the local network: the host walked an HTTP download there itself, so a connect to
+     * exactly it is let through while every other local address stays refused (net_scope.c). Counted: each [allowLocal]
+     * needs its [revokeLocal].
+     */
+    fun allowLocal(address: java.net.InetAddress, port: Int) {
+        val rv = nativeAllowLocal(words(address, port))
+        check(rv == 0) { "the engine's broker could not let ${address.hostAddress}:$port through ($rv)" }
+    }
+
+    fun revokeLocal(address: java.net.InetAddress, port: Int) {
+        nativeRevokeLocal(words(address, port))
+    }
+
+    /** An address as the broker words it: "a.b.c.d:port" or "[v6]:port", no zone. */
+    internal fun words(address: java.net.InetAddress, port: Int): String {
+        val host = address.hostAddress.orEmpty().substringBefore('%')
+        return if (address is java.net.Inet6Address) "[$host]:$port" else "$host:$port"
+    }
+
+    @JvmStatic private external fun nativeAllowLocal(words: String): Int
+
+    @JvmStatic private external fun nativeRevokeLocal(words: String): Int
+
     @JvmStatic private external fun nativeServe(
         virtualRoot: String,
         realRoot: String,

@@ -1,7 +1,10 @@
 #include "net_scope.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
+#include <pthread.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int ipv4_is_local(const uint8_t a[4]) {
@@ -29,23 +32,102 @@ static int ipv6_is_local(const uint8_t a[16]) {
     return 0;
 }
 
-int net_scope_is_local(const char *words) {
+/* An address as words name it: its family's bytes and its port. */
+struct endpoint {
+    int v6;
+    uint8_t address[16];
+    unsigned port;
+};
+
+/* 0 when words is "a.b.c.d:port" or "[v6]:port" with a port, else -1. A zone is not an endpoint. */
+static int parse(const char *words, struct endpoint *out) {
     char host[64];
-    if (!words) return 1;
+    if (!words) return -1;
     const char *end;
     const char *start = words;
-    if (*words == '[') {
+    out->v6 = *words == '[';
+    if (out->v6) {
         start = words + 1;
         end = strchr(start, ']');
+        if (!end || end[1] != ':') return -1;
     } else {
         end = strrchr(words, ':');
     }
-    if (!end || end <= start || (size_t) (end - start) >= sizeof(host)) return 1;
+    if (!end || end <= start || (size_t) (end - start) >= sizeof(host)) return -1;
     memcpy(host, start, (size_t) (end - start));
     host[end - start] = '\0';
-    /* A zone ("fe80::1%wlan0") is only ever link-local. */
-    if (strchr(host, '%')) return 1;
-    uint8_t address[16];
-    if (*words == '[') return inet_pton(AF_INET6, host, address) == 1 ? ipv6_is_local(address) : 1;
-    return inet_pton(AF_INET, host, address) == 1 ? ipv4_is_local(address) : 1;
+    if (strchr(host, '%')) return -1;
+    const char *digits = end + (out->v6 ? 2 : 1);
+    char *rest;
+    unsigned long port = strtoul(digits, &rest, 10);
+    if (*digits < '0' || *digits > '9' || *rest != '\0' || port > 65535) return -1;
+    out->port = (unsigned) port;
+    memset(out->address, 0, sizeof(out->address));
+    return inet_pton(out->v6 ? AF_INET6 : AF_INET, host, out->address) == 1 ? 0 : -1;
+}
+
+int net_scope_is_local(const char *words) {
+    struct endpoint e;
+    /* A zone ("fe80::1%wlan0") is only ever link-local, and anything unreadable is refused. */
+    if (parse(words, &e) != 0) return 1;
+    return e.v6 ? ipv6_is_local(e.address) : ipv4_is_local(e.address);
+}
+
+#define PASSES_MAX 32
+
+static struct {
+    struct endpoint endpoint;
+    unsigned count;
+} passes[PASSES_MAX];
+static pthread_mutex_t passes_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int same(const struct endpoint *a, const struct endpoint *b) {
+    return a->v6 == b->v6 && a->port == b->port && memcmp(a->address, b->address, sizeof(a->address)) == 0;
+}
+
+int net_scope_allow(const char *words) {
+    struct endpoint e;
+    if (parse(words, &e) != 0) return -EINVAL;
+    int rv = -ENOSPC;
+    pthread_mutex_lock(&passes_lock);
+    int free_slot = -1;
+    for (int i = 0; i < PASSES_MAX; i++) {
+        if (passes[i].count && same(&passes[i].endpoint, &e)) {
+            passes[i].count++;
+            rv = 0;
+            break;
+        }
+        if (!passes[i].count && free_slot < 0) free_slot = i;
+    }
+    if (rv != 0 && free_slot >= 0) {
+        passes[free_slot].endpoint = e;
+        passes[free_slot].count = 1;
+        rv = 0;
+    }
+    pthread_mutex_unlock(&passes_lock);
+    return rv;
+}
+
+int net_scope_revoke(const char *words) {
+    struct endpoint e;
+    if (parse(words, &e) != 0) return -EINVAL;
+    pthread_mutex_lock(&passes_lock);
+    for (int i = 0; i < PASSES_MAX; i++) {
+        if (passes[i].count && same(&passes[i].endpoint, &e)) {
+            passes[i].count--;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&passes_lock);
+    return 0;
+}
+
+int net_scope_is_allowed(const char *words) {
+    struct endpoint e;
+    if (parse(words, &e) != 0) return 0;
+    int found = 0;
+    pthread_mutex_lock(&passes_lock);
+    for (int i = 0; i < PASSES_MAX && !found; i++) found = passes[i].count && same(&passes[i].endpoint, &e);
+    pthread_mutex_unlock(&passes_lock);
+    return found;
 }
