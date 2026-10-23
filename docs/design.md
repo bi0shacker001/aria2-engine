@@ -70,7 +70,15 @@ it calls `DownloadEngine.allowLocal(address, port)` before adding it and `revoke
 exactly that address and port is let through; every other local address stays refused, so a torrent's peers, web
 seeds and a Metalink's mirrors still never reach the network. Passes are counted, so two downloads from one server
 do not close each other's. While a pass is open, a peer at that very address and port could connect too: it would
-have to be the person's own server, during their own download. **Not covered:** a
+have to be the person's own server, during their own download.
+
+**What the host vouches for (v0.1.3; droidtop's owner: "droidtop can vouch for all local links, not just
+torrents").** Every address the host itself handed over may get a pass: a direct link; a torrent's trackers and web
+seeds and a Metalink's mirrors, when the file or magnet came from the host. The engine reads those files, never the
+host, and [status] reports what it found: each file's `uris` (web seeds, mirrors) and a torrent's `announceList`.
+A host that wants to vouch for them adds the download with aria2's `pause` option, reads the status, gives its
+passes, then [resume]s it, so the engine contacts nothing before the passes exist. What the engine finds on its own
+(DHT, PEX, the peers a tracker answers with, a redirect the host did not walk) never gets one. **Not covered:** a
 UDP datagram sent without a connect names its address in memory the broker never sees (the sandbox's `sbx.h`), so
 DHT packets can still go to a local address; they carry no host data.
 

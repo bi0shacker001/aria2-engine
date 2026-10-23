@@ -35,8 +35,8 @@ enum class EngineEvent(val code: Int) {
     }
 }
 
-/** One file of a download, its path as the host sees it. */
-data class DownloadFile(val path: String, val length: Long, val completedLength: Long, val selected: Boolean)
+/** One file of a download, its path as the host sees it, and the addresses it is fetched from (web seeds, mirrors). */
+data class DownloadFile(val path: String, val length: Long, val completedLength: Long, val selected: Boolean, val uris: List<String> = emptyList())
 
 /** One download's state ([DownloadEngine.status]); paths are the host's real ones. */
 data class DownloadStatus(
@@ -51,6 +51,8 @@ data class DownloadStatus(
     val followedBy: List<String>,
     val files: List<DownloadFile>,
     val torrentName: String,
+    /** A torrent's trackers, as its metadata names them; empty for anything else. */
+    val announceList: List<String> = emptyList(),
 ) {
     companion object {
         /** Parses the engine's typed status; [realPath] turns the engine's virtual paths into the host's. */
@@ -70,9 +72,14 @@ data class DownloadStatus(
                 followedBy = List(followed?.length() ?: 0) { followed!!.getString(it) },
                 files = List(filesJson?.length() ?: 0) {
                     val f = filesJson!!.getJSONObject(it)
-                    DownloadFile(realPath(f.optString("path")), f.optLong("length"), f.optLong("completedLength"), f.optBoolean("selected"))
+                    val uris = f.optJSONArray("uris")
+                    DownloadFile(
+                        realPath(f.optString("path")), f.optLong("length"), f.optLong("completedLength"), f.optBoolean("selected"),
+                        List(uris?.length() ?: 0) { i -> uris!!.getString(i) },
+                    )
                 },
                 torrentName = o.optString("torrentName"),
+                announceList = o.optJSONArray("announceList").let { a -> List(a?.length() ?: 0) { a!!.getString(it) } },
             )
         }
     }

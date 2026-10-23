@@ -237,10 +237,21 @@ JNIEXPORT jstring JNICALL Java_io_github_bi0shacker001_aria2engine_EngineNative_
     files += files.empty() ? "" : ",";
     files += "{\"index\":" + std::to_string(file.index) + ",\"path\":" + quote(file.path) +
              ",\"length\":" + std::to_string(file.length) + ",\"completedLength\":" +
-             std::to_string(file.completedLength) + ",\"selected\":" + (file.selected ? "true" : "false") + "}";
+             std::to_string(file.completedLength) + ",\"selected\":" + (file.selected ? "true" : "false");
+    // Where the file is fetched from besides peers: a torrent's web seeds, a Metalink's mirrors. The host vouches
+    // for the ones it handed over before the download starts (docs/design.md, "Passes").
+    std::string uris;
+    for (const auto& uri : file.uris) uris += (uris.empty() ? "" : ",") + quote(uri.uri);
+    files += ",\"uris\":[" + uris + "]}";
   }
   json += ",\"files\":[" + files + "]";
   aria2::BtMetaInfoData bt = h->getBtMetaInfo();
+  // A torrent's trackers, as its metadata names them.
+  std::string announce;
+  for (const auto& tier : bt.announceList) {
+    for (const auto& url : tier) announce += (announce.empty() ? "" : ",") + quote(url);
+  }
+  json += ",\"announceList\":[" + announce + "]";
   json += ",\"torrentName\":" + quote(bt.name) + "}";
   aria2::deleteDownloadHandle(h);
   return utf(env, json);
