@@ -1,0 +1,215 @@
+--- a/src/HttpRequest.h
++++ b/src/HttpRequest.h
+@@ -83,6 +83,14 @@
+   // bytes and it is also true if it is used via HTTP proxy.
+   int64_t endOffsetOverride_;
+ 
++  // aria2-engine: this download is the bytes [byteRangeStart_,
++  // byteRangeStart_ + byteRangeLength_) of the remote entity
++  // (--byte-range). Every request asks for its part of that range, and
++  // the download's own length is the range's. 0 length: the whole
++  // entity, as upstream.
++  int64_t byteRangeStart_;
++  int64_t byteRangeLength_;
++
+   std::vector<std::string> headers_;
+ 
+   std::string userAgent_;
+@@ -220,6 +228,16 @@
+ 
+   void setEndOffsetOverride(int64_t offset) { endOffsetOverride_ = offset; }
+ 
++  void setByteRange(int64_t start, int64_t length)
++  {
++    byteRangeStart_ = start;
++    byteRangeLength_ = length;
++  }
++
++  bool hasByteRange() const { return byteRangeLength_ > 0; }
++
++  int64_t getByteRangeLength() const { return byteRangeLength_; }
++
+   void setIfModifiedSinceHeader(std::string value);
+ 
+   const std::string& getIfModifiedSinceHeader() const
+--- a/src/HttpRequest.cc
++++ b/src/HttpRequest.cc
+@@ -63,6 +63,8 @@
+       authConfigFactory_(nullptr),
+       option_(nullptr),
+       endOffsetOverride_(0),
++      byteRangeStart_(0),
++      byteRangeLength_(0),
+       userAgent_(USER_AGENT),
+       contentEncodingEnabled_(true),
+       acceptMetalink_(false),
+@@ -87,14 +89,26 @@
+ int64_t HttpRequest::getStartByte() const
+ {
+   if (!segment_) {
+-    return 0;
++    return byteRangeStart_;
+   }
+ 
+-  return fileEntry_->gtoloff(segment_->getPositionToWrite());
++  return byteRangeStart_ + fileEntry_->gtoloff(segment_->getPositionToWrite());
+ }
+ 
+ int64_t HttpRequest::getEndByte() const
+ {
++  if (hasByteRange()) {
++    // Always the range's end, or the end of this request's part of it.
++    int64_t end = byteRangeLength_ - 1;
++    if (segment_ && request_ && request_->isPipeliningEnabled()) {
++      end = std::min(end, fileEntry_->gtoloff(segment_->getPosition() +
++                                              segment_->getLength() - 1));
++    }
++    else if (endOffsetOverride_ > 0) {
++      end = std::min(end, endOffsetOverride_ - 1);
++    }
++    return byteRangeStart_ + end;
++  }
+   if (!segment_ || !request_) {
+     return 0;
+   }
+@@ -120,6 +134,10 @@
+ 
+ bool HttpRequest::isRangeSatisfied(const Range& range) const
+ {
++  if (hasByteRange()) {
++    // Exactly the bytes asked for; the entity's length is the server's.
++    return getStartByte() == range.startByte && getEndByte() == range.endByte;
++  }
+   if (!segment_) {
+     return true;
+   }
+@@ -198,9 +216,17 @@
+   if (!request_->isKeepAliveEnabled() && !request_->isPipeliningEnabled()) {
+     builtinHds.emplace_back("Connection:", "close");
+   }
+-  if (segment_ && segment_->getLength() > 0 &&
+-      (request_->isPipeliningEnabled() || getStartByte() > 0 ||
+-       getEndByte() > 0)) {
++  if (hasByteRange()) {
++    // The first request has no segment yet; a range is asked for anyway.
++    std::string rangeHeader = "bytes=";
++    rangeHeader += util::itos(getStartByte());
++    rangeHeader += '-';
++    rangeHeader += util::itos(getEndByte());
++    builtinHds.emplace_back("Range:", rangeHeader);
++  }
++  else if (segment_ && segment_->getLength() > 0 &&
++           (request_->isPipeliningEnabled() || getStartByte() > 0 ||
++            getEndByte() > 0)) {
+     std::string rangeHeader = "bytes=";
+     rangeHeader += util::uitos(getStartByte());
+     rangeHeader += '-';
+--- a/src/HttpResponse.cc
++++ b/src/HttpResponse.cc
+@@ -74,6 +74,22 @@
+   switch (statusCode) {
+   case 200: // OK
+   case 206: // Partial Content
++    if (httpRequest_->hasByteRange()) {
++      // A server that sends the whole entity, or another part of it, would
++      // write the wrong bytes: only the range asked for is taken.
++      auto responseRange = httpHeader_->getRange();
++      if (statusCode != 206 ||
++          httpHeader_->defined(HttpHeader::TRANSFER_ENCODING) ||
++          !httpRequest_->isRangeSatisfied(responseRange)) {
++        throw DL_ABORT_EX2(
++            fmt(EX_INVALID_RANGE_HEADER, httpRequest_->getStartByte(),
++                httpRequest_->getEndByte(), httpRequest_->getEntityLength(),
++                responseRange.startByte, responseRange.endByte,
++                responseRange.entityLength),
++            error_code::CANNOT_RESUME);
++      }
++      return;
++    }
+     if (!httpHeader_->defined(HttpHeader::TRANSFER_ENCODING)) {
+       // compare the received range against the requested range
+       auto responseRange = httpHeader_->getRange();
+@@ -235,6 +251,10 @@
+   if (!httpHeader_) {
+     return 0;
+   }
++  if (httpRequest_ && httpRequest_->hasByteRange()) {
++    // The download is the range, not the whole remote entity.
++    return httpRequest_->getByteRangeLength();
++  }
+ 
+   return httpHeader_->getRange().entityLength;
+ }
+--- a/src/HttpRequestCommand.cc
++++ b/src/HttpRequestCommand.cc
+@@ -58,6 +58,7 @@
+ #include "Logger.h"
+ #include "LogFactory.h"
+ #include "fmt.h"
++#include "DlAbortEx.h"
+ #include "SocketRecvBuffer.h"
+ 
+ namespace aria2 {
+@@ -116,6 +117,19 @@
+   if (endOffset > 0) {
+     httpRequest->setEndOffsetOverride(endOffset);
+   }
++  const auto& byteRange = option->get(PREF_BYTE_RANGE);
++  if (!byteRange.empty()) {
++    auto dash = byteRange.find('-');
++    int64_t first, last;
++    if (dash == std::string::npos ||
++        !util::parseLLIntNoThrow(first, byteRange.substr(0, dash)) ||
++        !util::parseLLIntNoThrow(last, byteRange.substr(dash + 1)) ||
++        first < 0 || last < first) {
++      throw DL_ABORT_EX2(fmt("Bad byte-range %s", byteRange.c_str()),
++                         error_code::OPTION_ERROR);
++    }
++    httpRequest->setByteRange(first, last - first + 1);
++  }
+   return httpRequest;
+ }
+ } // namespace
+--- a/src/prefs.h
++++ b/src/prefs.h
+@@ -139,6 +139,8 @@
+ extern PrefPtr PREF_DAEMON;
+ // value: a string
+ extern PrefPtr PREF_REFERER;
++// aria2-engine: START-END, the bytes of the remote file this download is
++extern PrefPtr PREF_BYTE_RANGE;
+ // value: 1*digit
+ extern PrefPtr PREF_LOWEST_SPEED_LIMIT;
+ // value: 1*digit
+--- a/src/prefs.cc
++++ b/src/prefs.cc
+@@ -182,6 +182,7 @@
+ PrefPtr PREF_DAEMON = makePref("daemon");
+ // value: a string
+ PrefPtr PREF_REFERER = makePref("referer");
++PrefPtr PREF_BYTE_RANGE = makePref("byte-range");
+ // value: 1*digit
+ PrefPtr PREF_LOWEST_SPEED_LIMIT = makePref("lowest-speed-limit");
+ // value: 1*digit
+--- a/src/OptionHandlerFactory.cc
++++ b/src/OptionHandlerFactory.cc
+@@ -1188,6 +1188,19 @@
+     handlers.push_back(op);
+   }
+   {
++    // aria2-engine: one download per option set, never a session default.
++    OptionHandler* op(new DefaultOptionHandler(
++        PREF_BYTE_RANGE,
++        "The bytes START-END (inclusive) of the remote file are this download:"
++        " each request asks for its part of them, only a 206 answer with"
++        " exactly those bytes is taken, and the downloaded file is their"
++        " length. HTTP(S) only.",
++        NO_DEFAULT_VALUE, "START-END"));
++    op->addTag(TAG_HTTP);
++    op->setInitialOption(true);
++    handlers.push_back(op);
++  }
++  {
+     OptionHandler* op(new LocalFilePathOptionHandler(
+         PREF_SAVE_COOKIES, TEXT_SAVE_COOKIES, NO_DEFAULT_VALUE,
+         /* acceptStdin = */ false, 0, /* mustExist = */ false));

@@ -106,6 +106,18 @@ engine forces that bundle as `ca-certificate`: no caller can name another.
 - **A start that fails** after the lockdown ends the engine's process, since the lockdown holds for its life:
   the host's next start binds a fresh one.
 - **Defaults:** torrents don't seed (`seed-time=0`) unless the host asks, and files are not preallocated.
+- **`byte-range=START-END`** (ours, not upstream's; `vendor/patches/aria2-1.37.0-byte-range.patch`): one download is
+  the bytes START to END (inclusive) of a remote HTTP(S) file, for a store whose files are ranges of one big file
+  (GOG's Gen 1 `main.bin`). Every request asks for its part of that range, including the first, which upstream sends
+  without a Range; only a `206` whose Content-Range is exactly that part is taken, so a server that ignores the range
+  fails the download (aria2's "cannot resume", 8) rather than writing the whole file; and the download's length is the
+  range's. A resume asks for the rest of the range. Use it with `split=1`.
+
+## Patches to aria2
+
+aria2 is vendored as its release tarball, checked against its digest (`vendor/SOURCES`). What this repository changes
+in it is a patch per change in `vendor/patches`, named after the tarball it applies to, which `build/build.sh` applies
+after unpacking; nothing else edits aria2's source. A new aria2 release means checking each patch still applies.
 
 ## Identity
 
@@ -141,6 +153,7 @@ Enginehost bundle that AAR, pinned by digest.
   - HTTP from the runner into the host's folder;
   - HTTPS with the platform's certificates;
   - that a hook option is refused;
+  - that a `byte-range` download is its own file of exactly those bytes;
   - that a folder outside the engine's is not reachable.
 - **The smoke test:** `build/smoke.sh` links `native/smoke/engine_smoke.cc`, which drives libaria2 directly (session, add, run, events).
 CI runs it on the emulator (API 30 and 34) over HTTP from the runner and over HTTPS with the platform's

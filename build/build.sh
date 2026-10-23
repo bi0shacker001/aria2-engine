@@ -85,6 +85,10 @@ expat_dir="$(unpack "$(source_archive expat)")"
 aria2_dir="$(unpack "$(source_archive aria2)")"
 (
   cd "$aria2_dir"
+  # Our changes to aria2, each a patch in vendor/patches named after the tarball it applies to (vendor/SOURCES).
+  for p in "$here"/vendor/patches/aria2-1.37.0-*.patch; do
+    patch -p1 --forward --quiet < "$p"
+  done
   ./configure --host="$triple" --build=x86_64-pc-linux-gnu --prefix="$prefix" \
     --enable-libaria2 --enable-static --disable-shared --disable-nls \
     --with-openssl --without-gnutls --without-libnettle --without-libgmp --without-libgcrypt \

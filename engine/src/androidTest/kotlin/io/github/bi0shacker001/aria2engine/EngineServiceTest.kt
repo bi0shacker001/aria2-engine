@@ -142,6 +142,28 @@ class EngineServiceTest(private val androidIsolation: Boolean) {
     }
 
     @Test
+    fun aByteRangeIsItsOwnFileOfExactlyThoseBytes() {
+        // vendor/patches/aria2-1.37.0-byte-range.patch: a store's file that is a range of one big remote file (GOG's
+        // Gen 1 main.bin). The whole file first, to cut the expected bytes from.
+        val whole = File(completes(DownloadRequest(DownloadKind.URI, uris = listOf("$serverBase/blob.bin"), options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job11"))).files.single().path)
+        val start = 1_000_003L
+        val end = 3_100_000L
+        val status = completes(
+            DownloadRequest(
+                DownloadKind.URI,
+                uris = listOf("$serverBase/blob.bin"),
+                options = mapOf("dir" to "${EngineConfig.VIRTUAL_ROOT}/job12", "out" to "part.bin", "split" to "1", "byte-range" to "$start-$end"),
+            ),
+        )
+        assertEquals("complete", status.state)
+        val part = File(status.files.single().path)
+        assertEquals(end - start + 1, part.length())
+        assertEquals(end - start + 1, status.totalLength)
+        val expected = whole.readBytes().copyOfRange(start.toInt(), end.toInt() + 1)
+        assertTrue("the range's bytes, in order", expected.contentEquals(part.readBytes()))
+    }
+
+    @Test
     fun httpsUsesThePlatformsCertificates() {
         // A CI emulator's own network can be dead (ConnectivityService "Machine is not on the network"); the other tests
         // reach the runner over adb reverse and do not need it.
