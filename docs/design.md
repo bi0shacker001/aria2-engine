@@ -91,6 +91,11 @@ which the host writes at every start as one PEM file in the engine's state folde
 CA files by OpenSSL's old subject hash, which OpenSSL 3 does not look up, so the directory itself will not do. The
 engine forces that bundle as `ca-certificate`: no caller can name another.
 
+The broker logs a refused path call as a warning. A miss ("No such file or directory") is not a refusal: aria2
+looks for its `.aria2` control file and the download before it creates them. So a miss is logged once per download,
+at debug level (`native/broker/audit_level.c`, keyed by the path without `.aria2`). A Steam download through
+droidtop asks a dozen times per chunk, and as warnings those flooded logcat (Droidtop/tracker#862).
+
 ## Options
 
 `EngineConfig` decides what libaria2 may do, whatever the caller asks, the host included:

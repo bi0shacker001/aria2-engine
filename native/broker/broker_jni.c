@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <android/log.h>
 
+#include "audit_level.h"
 #include "net_scope.h"
 #include "sbx.h"
 
@@ -23,10 +24,11 @@
 
 static void audit(void *context, const struct sbx_access *access, int result) {
     (void) context;
-    if (result < 0) {
-        __android_log_print(ANDROID_LOG_WARN, TAG, "refused %s %s: %s", access->op, access->asked ? access->asked : "?",
-                            strerror(-result));
-    }
+    enum audit_level level = audit_level(access->asked, result);
+    if (level == AUDIT_SILENT) return;
+    __android_log_print(level == AUDIT_WARN ? ANDROID_LOG_WARN : ANDROID_LOG_DEBUG, TAG, "%s %s %s: %s",
+                        level == AUDIT_WARN ? "refused" : "no such file yet:", access->op,
+                        access->asked ? access->asked : "?", strerror(-result));
 }
 
 /*
